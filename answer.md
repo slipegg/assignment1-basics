@@ -111,3 +111,154 @@ Suppose we constructed our model using this configuration. How many trainable pa
   * Attention projections从原本的 1 T FLOPs (总Flops的20.3%) → 16 T FLOPs (总Flops的8.2%)
   * Attention quadratic从原本的 483.18 G FLOPs (总Flops的9.8%) → 123.70 T FLOPs (总Flops的63.5%)
   * Feed-forward从原本的 3.01 T FLOPs (总Flops的61.0%) → 48.32 T FLOPs (总Flops的24.8%)
+
+# Problem (learning_rate_tuning): Tuning the learning rate (1 point)
+
+测试代码如下：
+
+```python
+import torch
+
+def tiny_train(lr: float):
+    print(f"Learning rate: {lr}")
+    weights = torch.nn.Parameter(5 * torch.randn((10, 10)))
+    opt = torch.optim.SGD([weights], lr=lr)
+    for t in range(10):
+        opt.zero_grad() # Reset the gradients for all learnable parameters.
+        loss = (weights**2).mean() # Compute a scalar loss value.
+        print(loss.cpu().item())
+        loss.backward() # Run backward pass, which computes gradients.
+        opt.step() # Run optimizer step.
+
+if __name__ == "__main__":
+    for lr in [1e1, 1e2, 1e3]:
+        tiny_train(lr)
+```
+
+测试代码输出如下：
+
+```text
+Learning rate: 10.0
+21.633373260498047
+13.845359802246094
+8.861030578613281
+5.671059608459473
+3.6294777393341064
+2.3228659629821777
+1.4866342544555664
+0.9514459371566772
+0.6089254021644592
+0.38971224427223206
+Learning rate: 100.0
+23.901451110839844
+23.901447296142578
+23.901447296142578
+23.901447296142578
+23.901445388793945
+23.901445388793945
+23.901445388793945
+23.901445388793945
+23.901445388793945
+23.901445388793945
+Learning rate: 1000.0
+19.145631790161133
+6911.572265625
+2495077.5
+900722944.0
+325160927232.0
+117383108755456.0
+4.237529839357133e+16
+1.5297482187503305e+19
+5.522390987225321e+21
+1.9935831548325902e+24
+```
+
+* 可以看到对于1e1的学习率，loss在逐渐减小，说明模型在收敛；对于1e2的学习率，loss基本保持不变，说明学习率过大，模型无法有效更新参数；对于1e3的学习率，loss迅速增大，说明学习率过大导致模型发散。
+
+# Problem (adamwAccounting): Resource accounting for training with AdamW (2 points)
+
+(a) How much peak memory does running AdamW require? Decompose your answer based on the memory usage of the parameters, activations, gradients, and optimizer state. Express your answer in terms of the batch_size and the model hyperparameters (vocab_size, context_length, num_layers, d_model, num_heads). Assume d_ff = 4 × d_model.  
+
+For simplicity, when calculating memory usage of activations, consider only the following components:  
+* Transformer block  
+  *  RMSNorm(s)  
+  *  Multi-head self-attention sublayer: QKV projections, Q⊤K matrix multiply, softmax, weighted sum of values, output projection.  
+  *  Position-wise feed-forward: W1 matrix multiply, SiLU, W2 matrix multiply  
+*  final RMSNorm 
+*  output embedding
+*  cross-entropy on logits
+
+* 假设
+  * B = batch_size
+  * V = vocab_size
+    * C = context_length
+    * L = num_layers
+    * d = d_model
+    * h = num_heads
+    * f = d_ff = 4 × d_model
+    * each FP32 value = 4 bytes
+* 先看**参数量parameters**：
+  * 对于Transformer block，其一层的参数量为： P_layer = 4 * d * d + 3 * d * f + 2 * d = 4 * d^2 + 12 * d^2 + 2 * d = 16 * d^2 + 2 * d
+    * 对于L层Transformer block，其总参数量为： P_transformer = L * P_layer = L * (16 * d^2 + 2 * d)
+  * 对于final RMSNorm，其参数量为： P_rmsnorm = d
+  * 对于input embedding 和 output embedding，其参数量为： 2 * P_embedding = 2 * V * d
+  * 所以总参数量为： P_total = P_transformer + P_rmsnorm + P_embedding = L * (16 * d^2 + 2 * d) + d + 2 * V * d = 16 * L * d^2 + (2 * L + 1 + 2 * V) * d
+* 再看**梯度gradients**：
+  * 每一个参数对应一个梯度，所以梯度的总量与参数量相同： G_total = P_total = 16 * L * d^2 + (2 * L + 1 + 2 * V) * d
+* 再看**优化器状态optimizer state**：
+  * AdamW为每个参数维护两个动量变量m和v，所以优化器状态的总量为： O_total = 2 * P_total = 2 * (16 * L * d^2 + (2 * L + 1 + 2 * V) * d) = 32 * L * d^2 + 2 * (2 * L + 1 + 2 * V) * d
+* 再看**激活量activations**：
+  * 对于Transformer block，其一层的激活量为：
+    * RMSNorm(s): 2 * B * C * d
+    * Multi-head self-attention sublayer:
+      * QKV projections: 3 * B * C * d
+      * Q⊤K matrix multiply: B * h * C^2
+      * softmax: B * h * C^2
+      * weighted sum of values: B * h * C^2
+      * output projection: B * C * d
+    * Position-wise feed-forward:
+      * W1 matrix multiply: B * C * f = B * C * 4 * d
+      * SiLU: B * C * f = B * C * 4 * d
+      * W2 matrix multiply: B * C * d
+    * 所以每层的激活量为： A_layer = (2 + 3 + 1 + 1 + 1 + 4 + 4 + 1) * B * C * d + 3 * B * h * C^2 = 17 * B * C * d + 3 * B * h * C^2
+    * L层的总激活量为： A_transformer = L * A_layer = L * (17 * B * C * d + 3 * B * h * C^2)
+  * final RMSNorm: A_rmsnorm = 2 * B * C * d
+  * output embedding: A_embedding = B * C
+  * cross-entropy on logits: A_cross_entropy = B
+  * 所以总激活量为： A_total = A_transformer + A_rmsnorm + A_embedding + A_cross_entropy = L * (17 * B * C * d + 3 * B * h * C^2) + 2 * B * C * d + B * C + B = (17L + 2)B*C*d + 3L*B*h*C^2 + B*C + B
+
+(b) Instantiate your answer for a GPT-2 XL-shaped model to get an expression that only depends on the batch_size. What is the maximum batch size you can use and still fit within 80GB memory?  Deliverable: An expression that looks like a · batch_size + b for numerical values a, b, and a number representing the maximum batch size.
+
+* 对于GPT-2 XL，代入参数：
+  * V = 50257
+  * C = 1024
+  * L = 48
+  * d = 1600
+  * h = 25
+* 计算各部分内存需求：
+  * 参数量parameters： P_total = 16 * 48 * 1600^2 + (2 * 48 + 1 + 2 * 50257) * 1600 = 2,127,065,600 ≈ 2.13B
+  * 梯度gradients： G_total = P_total = 2,127,065,600 ≈ 2.13B
+  * 优化器状态optimizer state： O_total = 2 * P_total = 4,254,115,200 ≈ 4.25B
+  * 激活量activations： A_total = (17*48 + 2)*B*1024*1600 + 3*48*B*25*1024^2 + B*1024 + B = 1,340,211,200*B + 3,774,873,600*B + 1025*B = 5,115,085,825*B ≈ 5.12B*B
+* 总内存需求为：
+  * M_total = (P_total + G_total + O_total + A_total) * 4 bytes = (2.13B + 2.13B + 4.25B + 5.12B*B) * 4 bytes = (8.51B + 5.12B*B) * 4 bytes = 34.04B bytes + 20.48B*B bytes
+* 要在80GB内存内运行，解不等式：
+  * 34.04B + 20.48B*B ≤ 80GB
+  * 20.48B*B ≤ 45.96GB
+  * B ≤ 2.244
+* 所以在一个80GB内存的环境下，最大batch size为2。
+
+(c) How many FLOPs does running one step of AdamW take?
+
+* 计算FLOPs：
+  * 前向传播FLOPs： F_forward = 4,926,849,024,000 ≈ 4.93 TFLOPs
+  * 反向传播FLOPs： F_backward = 2 * F_forward = 9,853,698,048,000 ≈ 9.85 TFLOPs
+  * AdamW优化器FLOPs： F_adamw = 8 * P_total = 8 * 2,127,065,600 = 17,016,524,800 ≈ 17.02 GFLOPs
+
+(d) Model FLOPs utilization (MFU) is defined as the ratio of observed throughput (tokens per second) relative to the hardware’s theoretical peak FLOP throughput [Chowdhery et al., 2022]. An NVIDIA A100 GPU has a theoretical peak of 19.5 teraFLOP/s for float32 operations. Assuming you are able to get 50% MFU, how long would it take to train a GPT-2 XL for 400K steps and a batch size of 1024 on a single A100? Following Kaplan et al. [2020] and Hoffmann et al. [2022], assume that the backward pass has twice the FLOPs of the forward pass.
+
+* 一轮的FLOPs为： F_step = B * (F_forward + F_backward) + F_adamw = 1024 * (4.93 TFLOPs + 9.85 TFLOPs) + 0.017 TFLOPs = 15,135.30 TFLOPs 
+* 每一步的时间为： T_step = F_step / (19.5 TFLOP/s * 0.5) = 15,135.30 TFLOPs / 9.75 TFLOP/s = 1,552.34 seconds ≈ 25.9 minutes
+* 400k步的总时间为： T_total = 400,000 * T_step = 400,000 * 1,552.34 seconds = 620,936,000 seconds ≈ 19.7 years
+
+
