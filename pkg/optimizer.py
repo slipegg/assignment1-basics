@@ -16,7 +16,7 @@ def cross_entropy(logits: Float[torch.Tensor, "batch seq_len vocab_size"], targe
     target_logits = shifted_logits.gather(dim=-1, index=targets.unsqueeze(-1)).squeeze(-1)
     return -(target_logits - prob_sum.log()).mean()
 
-class Adamw(torch.optim.Optimizer):
+class AdamW(torch.optim.Optimizer):
     def __init__(self, params, lr: float = 1e-2, betas: tuple = (0.9, 0.999), eps: float = 1e-8, weight_decay: float = 1e-2):
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
         super().__init__(params, defaults)
@@ -52,11 +52,11 @@ class Adamw(torch.optim.Optimizer):
                 state['v'] = v
         return loss
         
-def learning_rate_schedule(t: int, warmup_steps: int = 1000, max_lr: float = 1e-2, min_lr: float = 1e-4, cosine_steps: int = 10000) -> float:
-    if t < warmup_steps:
-        return max_lr * t / warmup_steps
-    elif t <= cosine_steps:
-        return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * (t - warmup_steps) / (cosine_steps - warmup_steps)))
+def learning_rate_schedule(step: int, warmup_steps: int = 1000, max_lr: float = 1e-2, min_lr: float = 1e-4, cosine_steps: int = 10000) -> float:
+    if step < warmup_steps:
+        return max_lr * step / warmup_steps
+    elif step <= cosine_steps:
+        return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * (step - warmup_steps) / (cosine_steps - warmup_steps)))
     else:
         return min_lr
         
