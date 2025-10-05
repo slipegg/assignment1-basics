@@ -3,53 +3,16 @@ import time
 import typing
 import torch
 import wandb
-import tqdm
+from tqdm import tqdm
 import numpy as np
 import numpy.typing as npt
 
-from training_config import TrainingConfig
-from optimizer import cross_entropy, learning_rate_schedule, gradient_clipping, AdamW
-from model import TransformerLM
+from cs336_basics.models.model import TransformerLM
+from cs336_basics.config.training_config import TrainingConfig
+from .optimizer import cross_entropy, learning_rate_schedule, gradient_clipping, AdamW
+from .checkpoint import save_checkpoint, load_checkpoint
+from .data_loader import data_loading
 
-
-def data_loading(
-        x: npt.NDArray, 
-        batch_size: int, 
-        context_length: int, 
-        device: str
-    )-> tuple[torch.Tensor, torch.Tensor]:
-    start_indices = np.random.randint(0, len(x) - context_length, size=batch_size)
-    all_indices = start_indices[:, None] + np.arange(context_length + 1)[None, :]
-
-    inputs = x[all_indices[:, :-1]]
-    targets = x[all_indices[:, 1:]]
-
-    return tuple([torch.from_numpy(t).to(device) for t in (inputs, targets)])
-
-
-def save_checkpoint(
-        model: torch.nn.Module, 
-        optimizer: torch.optim.Optimizer, 
-        iteration: int,
-        out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes]
-    ):
-    checkpoint = {
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'iteration': iteration
-    }
-    torch.save(checkpoint, out)
-
-
-def load_checkpoint(
-        src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],  
-        model: torch.nn.Module,  
-        optimizer: torch.optim.Optimizer
-    ) -> int:
-    checkpoint = torch.load(src)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    return checkpoint['iteration']
 
 def training_step(
         config: TrainingConfig,
@@ -91,14 +54,16 @@ def evaluate(
 def training(
         config: TrainingConfig
     ):
-    wandb.init(project=config.project_name, 
-               name=config.run_name if config.run_name is not None else "run-"+ time.strftime("%Y%m%d-%H%M%S"),
-               config=config.__dict__,
-    )
-    print("WandB initialized, project name:", config.project_name, "run name:", wandb.run.name)
+    print("Training started with config:", config)
+    if config.enable_wandb:
+        wandb.init(project=config.project_name, 
+                name=config.run_name if config.run_name is not None else "run-"+ time.strftime("%Y%m%d-%H%M%S"),
+                config=config.__dict__,
+        )
+        print("WandB initialized, project name:", config.project_name, "run name:", wandb.run.name)
 
-    train_dataset = np.memmap(config.train_path, dtype=np.uint16, mode='r')
-    valid_dataset = np.memmap(config.valid_path, dtype=np.uint16, mode='r')
+    train_dataset = np.memmap(config.train_dataset_path, dtype=np.uint16, mode='r')
+    valid_dataset = np.memmap(config.valid_dataset_path, dtype=np.uint16, mode='r')
 
     model = TransformerLM(
         vocab_size=config.vocab_size,
@@ -111,6 +76,10 @@ def training(
         device=config.device,
         dtype=config.dtype
     )
+
+    if config.is_compile:
+        model = torch.compile(model, backend="eager")
+        print("Model compiled with torch.compile")
 
     optimizer = AdamW(
         model.parameters(),
@@ -143,31 +112,34 @@ def training(
 
         if (step - 1) % config.log_interval == 0 or step == config.total_steps:
             grad_norm = torch.sqrt(sum(p.grad.data.norm()**2 for p in model.parameters() if p.grad is not None)).item()
-            wandb.log(
-                {
-                    "step": step,
-                    "train/loss": train_loss,
-                    "train/learning_rate": lr,
-                    "train/grad_norm": grad_norm,
-                    "train/wallclock_time": time.time() - start_time
-                }
-            )
+            if config.enable_wandb:
+                wandb.log(
+                    {
+                        "step": step,
+                        "train/loss": train_loss,
+                        "train/learning_rate": lr,
+                        "train/grad_norm": grad_norm,
+                        "train/wallclock_time": time.time() - start_time
+                    }
+                )
         
         if (step-1) % config.eval_interval == 0 or step == config.total_steps:
             valid_loss = evaluate(config, valid_dataset, model)
-            wandb.log(
-                {
-                    "step": step,
-                    "valid/loss": valid_loss,
-                    "valid/wallclock_time": time.time() - start_time
-                }
-            )
+            if config.enable_wandb:
+                wandb.log(
+                    {
+                        "step": step,
+                        "valid/loss": valid_loss,
+                        "valid/wallclock_time": time.time() - start_time
+                    }
+                )
             print(f"Step {step}: train loss {train_loss:.4f}, valid loss {valid_loss:.4f}")
         
         if ((step-1) % config.checkpoint_interval == 0 and step > 1) or step == config.total_steps:
-            save_path = f"{config.checkpoint_prefix}{step}.pt"
+            save_path = f"{config.checkpoint_folder}{config.checkpoint_prefix}{step}.pt"
             save_checkpoint(model, optimizer, step, save_path)
             print(f"Checkpoint saved to {save_path}")
     
-    wandb.finish()
+    if config.enable_wandb:
+        wandb.finish()
     print("Training completed.")

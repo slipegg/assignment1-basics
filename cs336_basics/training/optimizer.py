@@ -14,7 +14,8 @@ def cross_entropy(logits: Float[torch.Tensor, "batch seq_len vocab_size"], targe
     shifted_logits = logits - max_logits
     prob_sum = shifted_logits.exp().sum(dim=-1, keepdim=True)
     target_logits = shifted_logits.gather(dim=-1, index=targets.unsqueeze(-1)).squeeze(-1)
-    return -(target_logits - prob_sum.log()).mean()
+    return -(target_logits - prob_sum.log().squeeze(-1)).mean()
+
 
 class AdamW(torch.optim.Optimizer):
     def __init__(self, params, lr: float = 1e-2, betas: tuple = (0.9, 0.999), eps: float = 1e-8, weight_decay: float = 1e-2):
