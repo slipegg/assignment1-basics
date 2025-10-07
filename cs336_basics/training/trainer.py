@@ -77,6 +77,12 @@ def training(
         dtype=config.dtype
     )
 
+    # model搬运到指定设备
+    if config.device == 'cuda':
+        model = model.cuda()
+    elif config.device == 'cpu':
+        model = model.cpu()
+
     if config.is_compile:
         model = torch.compile(model, backend="eager")
         print("Model compiled with torch.compile")
