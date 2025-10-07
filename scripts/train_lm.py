@@ -46,9 +46,11 @@ def init_dataset(config: TrainingConfig):
 
 if __name__ == "__main__":
     config = TrainingConfig(
-        project_name="cs336-tinystories",
-        total_steps=5000,
-        checkpoint_interval=50,
+        checkpoint_folder="./checkpoints/lr_1e-3/",
+        learning_rate=1e-3,
+        total_steps=3000,
+        cosine_steps=3000,
+        batch_size=64,
     )
 
     init_dataset(config)

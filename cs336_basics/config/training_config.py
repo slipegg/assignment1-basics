@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class TrainingConfig():
     # wandb
     enable_wandb: bool = True
-    project_name: str = "cs336-assignment1"
+    project_name: str = "cs336-tinystories"
     run_name: str | None = None
     log_interval: int = 10
 
@@ -25,20 +25,20 @@ class TrainingConfig():
     valid_dataset_path: str = "data/TinyStoriesV2-GPT4-valid.npy"
 
     # training
-    total_steps: int = 5000
+    total_steps: int = 3000
     eval_interval: int = 10
-    batch_size: int = 32
+    batch_size: int = 64
     context_length: int = 256
     gradient_clipping_max_norm: float  = 1.0
     is_compile: bool = True  # use torch.compile or not
 
     # evaluation
-    eval_batches: int = 10
+    eval_batches: int = 100
 
     # checkpointing
     checkpoint_folder: str = "./checkpoints/"
     checkpoint_prefix: str = "checkpoint_"   
-    checkpoint_interval: int = 10
+    checkpoint_interval: int = 500
 
     # model
     num_layers: int = 4
@@ -59,5 +59,5 @@ class TrainingConfig():
 
     # learning_rate_schedule
     warmup_steps: int = 100
-    cosine_steps: int = 5000
+    cosine_steps: int = 3000
     min_learning_rate: float = 1e-4
