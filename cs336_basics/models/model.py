@@ -91,7 +91,7 @@ class RotaryPositionalEmbedding(torch.nn.Module):
         half_dim = d_k // 2
         inv_freq = (theta ** -(torch.arange(0, half_dim, device=device).float() / half_dim)) # (half_dim,)
 
-        index = torch.arange(max_seq_len, device=device)
+        index = torch.arange(int(max_seq_len*1.1), device=device)
         theta_table = torch.outer(index, inv_freq)  # (max_seq_len, half_dim)
         self.register_buffer('cos', torch.cos(theta_table), persistent=False)
         self.register_buffer('sin', torch.sin(theta_table), persistent=False)
