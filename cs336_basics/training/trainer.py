@@ -62,9 +62,9 @@ def training(
         )
         print("WandB initialized, project name:", config.project_name, "run name:", wandb.run.name)
 
-    train_dataset = np.memmap(config.train_dataset_path, dtype=np.uint16, mode='r')
-    valid_dataset = np.memmap(config.valid_dataset_path, dtype=np.uint16, mode='r')
-
+    train_dataset = np.load(config.train_dataset_path, mmap_mode='r')
+    valid_dataset = np.load(config.valid_dataset_path, mmap_mode='r')
+    
     model = TransformerLM(
         vocab_size=config.vocab_size,
         context_length=config.context_length,
