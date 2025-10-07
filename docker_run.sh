@@ -1,3 +1,5 @@
+mkdir -p logs
+
 docker run -d \
     --env WANDB_API_KEY=$WANDB_API_KEY \
     --cpus="8" \
