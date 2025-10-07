@@ -142,7 +142,7 @@ def training(
             print(f"Step {step}: train loss {train_loss:.4f}, valid loss {valid_loss:.4f}")
         
         if ((step-1) % config.checkpoint_interval == 0 and step > 1) or step == config.total_steps:
-            save_path = f"{config.checkpoint_folder}{config.checkpoint_prefix}{step}.pt"
+            save_path = os.path.join(config.checkpoint_folder, f"{config.checkpoint_prefix}{step}.pt")
             save_checkpoint(model, optimizer, step, save_path)
             print(f"Checkpoint saved to {save_path}")
     
