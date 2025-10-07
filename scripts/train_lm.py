@@ -46,8 +46,8 @@ def init_dataset(config: TrainingConfig):
 
 if __name__ == "__main__":
     config = TrainingConfig(
-        checkpoint_folder="./checkpoints/lr_1e-3/",
-        learning_rate=1e-3,
+        checkpoint_folder="./checkpoints/lr_1e-2/",
+        learning_rate=1e-2,
         total_steps=3000,
         cosine_steps=3000,
         batch_size=64,

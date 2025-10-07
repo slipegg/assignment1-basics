@@ -26,14 +26,14 @@ class TrainingConfig():
 
     # training
     total_steps: int = 3000
-    eval_interval: int = 10
     batch_size: int = 64
     context_length: int = 256
     gradient_clipping_max_norm: float  = 1.0
     is_compile: bool = True  # use torch.compile or not
 
     # evaluation
-    eval_batches: int = 100
+    eval_batches: int = 64
+    eval_interval: int = 100
 
     # checkpointing
     checkpoint_folder: str = "./checkpoints/"
