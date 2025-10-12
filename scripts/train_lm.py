@@ -9,7 +9,7 @@ from cs336_basics.training.trainer import training
 
 def init_dataset(config: TrainingConfig):
     if not os.path.exists(config.vocab_path) or not os.path.exists(config.merge_path):
-        train_bpe(input_path = config.train_path,
+        train_bpe(input_path = config.train_bpe_file,
                 vocab_size = config.vocab_size,
                 special_tokens = config.special_tokens,
                 use_pretoken_file = config.use_pretoken_file,
